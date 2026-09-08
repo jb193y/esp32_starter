@@ -1019,6 +1019,8 @@ def espnow_receiver_thread(heartbeats=None):
     except Exception as ch_err:
         print(f" ESP-NOW-only channel notice: {ch_err}")
 
+    hub_sta_mac = bytes_to_mac(sta.config('mac'))
+
     def init_real_espnow():
         global _e
         _e = espnow.ESPNow()
@@ -1031,7 +1033,7 @@ def espnow_receiver_thread(heartbeats=None):
 
     init_real_espnow()
     
-    print(" ESP-NOW Master Receiver active and listening")
+    print(f" ESP-NOW Master Receiver active and listening (MAC: {hub_sta_mac})")
 
     _last_beacon_time = 0
     was_discovery_active = False
@@ -1062,8 +1064,8 @@ def espnow_receiver_thread(heartbeats=None):
                 except Exception:
                     active_ch = 4
                 beacon_payload = {
-                    "hub_mac": hub_mac_str,
-                    "sender_mac": hub_mac_str,
+                    "hub_mac": hub_sta_mac,
+                    "sender_mac": hub_sta_mac,
                     "channel": active_ch,
                     "hop_count": 0,
                     "valid_until": _discovery_active_until

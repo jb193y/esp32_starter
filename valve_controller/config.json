@@ -16,20 +16,11 @@
     "espnow_random_min_sec": 5,
     "espnow_random_max_sec": 15
   },
-  "wifi": {
-    "channel": 6,
-    "networks": [
-      {
-        "ssid": "ITSHERE",
-        "password": "2147742366"
-      }
-    ]
-  },
   "hub": {
-    "mac": "dc:b4:d9:14:23:3c"
+    "mac": "00:00:00:00:00:00"
   },
   "parent": {
-    "mac": "dc:b4:d9:14:2d:50"
+    "mac": "00:00:00:00:00:00"
   },
   "valves": [
     {

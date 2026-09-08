@@ -364,8 +364,14 @@ def send_direct_espnow(target_mac_str, target_id, msg_type, payload):
         print(f" Failed to send direct packet to {target_id}:", err)
         return False
 
-def send_discovery_request():
-    global _e, _pair_channel_idx, _last_pairing_tx_time, _discovery_lock_channel, _candidate_settle_until, _candidate_beacons
+def passive_beacon_scan():
+    """
+    Passive Beacon Scanning (Used during BLE Provisioning / Initial Join):
+    Cycles through channels [4, 6, 1, 11] dwelling 4s per channel without transmitting.
+    Listens for BEACON frames emitted by the Hub and active relay nodes.
+    Locks channel and gathers candidate beacons to select the best parent.
+    """
+    global _e, _pair_channel_idx, _last_pairing_tx_time, _discovery_lock_channel, _candidate_settle_until, _candidate_beacons, _paired
     if _e is None:
         return False
 
@@ -383,11 +389,52 @@ def send_discovery_request():
             })
             _candidate_beacons.clear()
             _discovery_lock_channel = None
-            send_pairing_request()
+            _paired = True
             return True
         _discovery_lock_channel = None
 
-    # Enforce a 4-second channel dwell time on discovery requests
+    # Enforce a 4-second channel dwell time for passive listening
+    if time.time() - _last_pairing_tx_time < 4:
+        return False
+    _last_pairing_tx_time = time.time()
+
+    # Multi-Channel Passive Scanning: cycle channels (4, 6, 1, 11) to listen for Beacons
+    channels = [4, 6, 1, 11]
+    ch = channels[_pair_channel_idx % len(channels)]
+    _pair_channel_idx += 1
+    set_wifi_channel(ch)
+    print(f" [Mesh Discovery] Scanning Channel {ch} (Passive Beacon Listening, 4s dwell)...")
+    return False
+
+def send_recovery_probe():
+    """
+    Active Recovery Probe (Used ONLY when a provisioned node loses contact with parent/hub):
+    Cycles through channels [4, 6, 1, 11] (4s dwell) broadcasting DISCOVERY_REQ.
+    Awake Hub and Relay nodes respond with DISCOVERY_RESP/BEACON.
+    """
+    global _e, _pair_channel_idx, _last_hub_rx_time, _last_pairing_tx_time, _discovery_lock_channel, _candidate_settle_until, _candidate_beacons, _paired
+    if _e is None:
+        return False
+
+    # If locked onto a response channel, wait for candidate responses to settle before deciding
+    if _discovery_lock_channel is not None:
+        if time.time() < _candidate_settle_until:
+            return False
+        if _candidate_beacons:
+            best = min(_candidate_beacons.values(), key=lambda b: (b.get("hop_count", 99), b.get("rssi_rank", 0)))
+            print(f" Best parent selected from Recovery responses: {best['parent_mac']} (Hops to Hub: {best['hop_count']}) on Channel {best['channel']}")
+            config.update_config({
+                "hub": {"mac": best["hub_mac"]},
+                "parent": {"mac": best["parent_mac"]},
+                "wifi": {"channel": best["channel"]}
+            })
+            _candidate_beacons.clear()
+            _discovery_lock_channel = None
+            _paired = True
+            return True
+        _discovery_lock_channel = None
+
+    # Enforce a 4-second channel dwell time on active recovery requests
     if time.time() - _last_pairing_tx_time < 4:
         return False
     _last_pairing_tx_time = time.time()
@@ -397,26 +444,29 @@ def send_discovery_request():
     source_id = client_cfg.get("id", "unknown_node")
     node_type = client_cfg.get("type", "client").upper()
 
+    sta = network.WLAN(network.STA_IF)
+    local_mac = bytes_to_mac(sta.config('mac'))
+
     payload = {
-        "status": "discovery_request",
+        "status": "recovery_probe",
         "node_type": node_type,
         "node_id": source_id,
-        "custom_name": client_cfg.get("custom_name", "Client Node")
+        "custom_name": client_cfg.get("custom_name", "Client Node"),
+        "mac": local_mac
     }
 
-    # Multi-Channel Mesh Scanning: cycle channels (4, 6, 1, 11) to discover nearby Hub/Repeater
     channels = [4, 6, 1, 11]
     ch = channels[_pair_channel_idx % len(channels)]
     _pair_channel_idx += 1
     set_wifi_channel(ch)
-    print(f"Scanning Channel {ch}: Broadcasting DISCOVERY_REQ from {node_type} (4s dwell)...")
+    print(f" [Mesh Recovery] Scanning Channel {ch}: Broadcasting DISCOVERY_REQ from {node_type} (4s dwell)...")
 
     envelope = message_builder.build_espnow_envelope(
         source_id,
         "broadcast",
         "DISCOVERY_REQ",
         payload,
-        route_id="discovery",
+        route_id="recovery",
         hops=["ff:ff:ff:ff:ff:ff"]
     )
 
@@ -426,77 +476,15 @@ def send_discovery_request():
         tx_queue.put((b'\xff\xff\xff\xff\xff\xff', frame_bytes, "ff:ff:ff:ff:ff:ff", "broadcast"))
         return True
     except Exception as err:
-        print(" Failed to enqueue discovery packet:", err)
+        print(" Failed to enqueue recovery probe packet:", err)
         return False
 
+# Backward compatibility aliases
+def send_discovery_request():
+    return passive_beacon_scan()
+
 def send_pairing_request():
-    global _e, _pair_channel_idx, _last_hub_rx_time, _last_pairing_tx_time, _discovery_lock_channel, _candidate_settle_until, _candidate_beacons
-    if _e is None:
-        return
-
-    # If locked onto a beacon's channel, wait for candidate beacons to settle before deciding
-    if _discovery_lock_channel is not None:
-        if time.time() < _candidate_settle_until:
-            return
-        if _candidate_beacons:
-            best = min(_candidate_beacons.values(), key=lambda b: (b.get("hop_count", 99), b.get("rssi_rank", 0)))
-            print(f" Best parent selected from Beacons: {best['parent_mac']} (Hops to Hub: {best['hop_count']}) on Channel {best['channel']}")
-            config.update_config({
-                "hub": {"mac": best["hub_mac"]},
-                "parent": {"mac": best["parent_mac"]},
-                "wifi": {"channel": best["channel"]}
-            })
-            _candidate_beacons.clear()
-            _discovery_lock_channel = None
-
-    # Enforce a 4-second channel dwell time on pairing requests
-    if time.time() - _last_pairing_tx_time < 4:
-        return
-    _last_pairing_tx_time = time.time()
-
-    cfg = config.load_config()
-    client_cfg = cfg.get("client", {})
-    node_type = client_cfg.get("type", "client").upper()
-    
-    sta = network.WLAN(network.STA_IF)
-    local_mac = bytes_to_mac(sta.config('mac'))
-    
-    payload = {
-        "status": "pairing_request",
-        "node_type": node_type,
-        "node_id": client_cfg.get("id", ""),
-        "custom_name": client_cfg.get("custom_name", "Client Node"),
-        "mac": local_mac
-    }
-
-    hub_mac = cfg.get("hub", {}).get("mac", "")
-    has_saved_hub = is_valid_mac(hub_mac) and hub_mac not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff")
-    time_since_last_rx = time.time() - _last_hub_rx_time
-    broadcast_only = client_cfg.get("espnow_broadcast_only", False)
-
-    if broadcast_only:
-        test_ch = cfg.get("wifi", {}).get("channel", 6)
-        set_wifi_channel(test_ch)
-        print(f"ESP-NOW broadcast test: staying on Channel {test_ch}")
-        send_ack_or_tele_to_hub("STATUS", payload, target_mac="ff:ff:ff:ff:ff:ff")
-        return
-
-    # If we have a saved Hub, try contacting it on its saved channel for up to 20s
-    # before starting dynamic multi-channel scanning
-    if has_saved_hub and time_since_last_rx < 20:
-        saved_ch = cfg.get("wifi", {}).get("channel", 4)
-        set_wifi_channel(saved_ch)
-        print(f"Sending PAIR_REQ unicast to Hub {hub_mac} on Channel {saved_ch}...")
-        send_ack_or_tele_to_hub("STATUS", payload, target_mac=hub_mac)
-    else:
-        # Multi-Channel Mesh Scanning: cycle channels (4, 6, 1, 11) to discover nearby Hub/Repeater
-        channels = [4, 6, 1, 11]
-        ch = channels[_pair_channel_idx % len(channels)]
-        _pair_channel_idx += 1
-        set_wifi_channel(ch)
-        print(f"Scanning Channel {ch}: Broadcasting PAIR_REQ from {node_type} (4s dwell)...")
-        send_ack_or_tele_to_hub("STATUS", payload, target_mac="ff:ff:ff:ff:ff:ff")
-
+    return send_recovery_probe()
 
 def is_paired():
     global _paired
@@ -539,9 +527,9 @@ def init_espnow_client(on_cmd_received_fn=None):
     
     espnow_relay.init_relay_engine(_e, lambda next_hop_bytes, payload_bytes, phys_mac, target_id: tx_queue.put((next_hop_bytes, payload_bytes, phys_mac, target_id)))
     
-    # Only request pairing if no valid parent/Hub MAC is stored in configuration
+    # If not paired, start passive beacon scan
     if not is_paired():
-        send_pairing_request()
+        passive_beacon_scan()
     else:
         hub_mac = cfg.get("hub", {}).get("mac", "") or cfg.get("parent", {}).get("mac", "")
         print(f" Node paired with Hub/Parent {hub_mac} on Channel {ch}")
@@ -549,7 +537,7 @@ def init_espnow_client(on_cmd_received_fn=None):
     return _e
 
 def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
-    global _e, _paired, _last_hub_rx_time, _next_wake_delay_ms
+    global _e, _paired, _last_hub_rx_time, _next_wake_delay_ms, _discovery_awake_until, _last_beacon_broadcast_time, _discovery_lock_channel, _candidate_settle_until, _candidate_beacons
     if _e is None:
         return
 
@@ -568,20 +556,22 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
         if heartbeats is not None:
             heartbeats["esp_now"] = time.time()
 
-        # Fallback to scanning if we lose contact with our paired Hub for 45s
+        # Fallback to recovery if we lose contact with our paired Hub for 45s
         if _paired and time.time() - _last_hub_rx_time > 45:
-            print(" Lost contact with Hub for 45s. Re-entering scanning mode...")
+            print(" Lost contact with Hub for 45s. Re-entering Recovery Mode...")
             _paired = False
 
         if not _paired:
             current_cfg = config.load_config()
             parent_mac = current_cfg.get("parent", {}).get("mac", "00:00:00:00:00:00")
-            time_since_last_rx = time.time() - _last_hub_rx_time
+            mode = current_cfg.get("client", {}).get("mode", "ble_setup")
             
-            if parent_mac == "00:00:00:00:00:00" or time_since_last_rx > 20:
-                send_discovery_request()
+            # If unprovisioned / in BLE setup without a valid parent: passive beacon scanning
+            if not is_valid_mac(parent_mac) or parent_mac in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff") or mode in ("ble_setup", "pending_confirm"):
+                passive_beacon_scan()
             else:
-                send_pairing_request()
+                # Provisioned node that lost contact with parent/hub: active recovery probing
+                send_recovery_probe()
         else:
             # Cascaded Beacon Re-broadcasting by Paired Relay Nodes during Discovery Window
             if int(time.time()) < _discovery_awake_until:
@@ -774,6 +764,7 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                             config.update_config(upd)
                             set_wifi_channel(ch)
                             
+                            _paired = True
                             _last_hub_rx_time = time.time() - hub_freshness
                             print(f" Discovered route: parent={parent_mac}, hub={hub_mac}, locked to channel {ch}")
                         except Exception as ex:

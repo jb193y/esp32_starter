@@ -1,26 +1,29 @@
 {
   "client": {
-    "id": "valve_node_11",
-    "custom_name": "COM11",
+    "id": "valve_node_21",
+    "custom_name": "COM21",
     "type": "valve",
     "controller_type": "YD-ESP32-S3 2022-V1.3",
     "board_type": "YD-ESP32-S3 2022-V1.3",
     "firmware_version": "valve_v1.0.0",
     "neopixel_pin": 48,
     "status_led": null,
-    "mode": "ble_setup",
-    "deep_sleep_enabled": false,
+    "mode": "normal",
+    "deep_sleep_enabled": true,
     "deep_sleep_sec": 30,
     "espnow_broadcast_only": false,
     "espnow_random_test": false,
     "espnow_random_min_sec": 5,
     "espnow_random_max_sec": 15
   },
+  "wifi": {
+    "channel": 11
+  },
   "hub": {
-    "mac": "00:00:00:00:00:00"
+    "mac": "dc:b4:d9:14:23:3c"
   },
   "parent": {
-    "mac": "00:00:00:00:00:00"
+    "mac": "dc:b4:d9:14:2d:ac"
   },
   "valves": [
     {

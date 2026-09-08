@@ -713,6 +713,10 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
             ack_cmd = str(data.get("command", "") or data.get("cmd", ""))
             if ack_st == "provisioned" or ack_cmd == "CONFIRM_PROVISION":
                 clear_mailbox_command(sender_mac_str, "CONFIRM_PROVISION")
+            elif ack_st in ("VALVES_UPDATED", "VALVES_SET"):
+                clear_mailbox_command(sender_mac_str, "SET_VALVES")
+                clear_mailbox_command(sender_mac_str, "VALVE_OPEN")
+                clear_mailbox_command(sender_mac_str, "VALVE_CLOSE")
             elif ack_cmd:
                 clear_mailbox_command(sender_mac_str, ack_cmd)
 
@@ -757,9 +761,21 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
             now_ms = config.get_unix_time_ms()
             target_ms = ((now_ms // cycle_period_ms) + 1) * cycle_period_ms
             next_wake_delay_ms = max(5000, min(target_ms - now_ms, cycle_period_ms))
+
+            incoming_hops = packet.get("hops", [])
+            relay_hops = []
+            if incoming_hops:
+                relay_hops = list(incoming_hops)
+                if len(relay_hops) > 0 and (relay_hops[-1].lower() == hub_sta_mac.lower() or relay_hops[-1].lower() == hub_ap_mac.lower()):
+                    relay_hops.pop()
+            
+            return_hops = []
+            for hop in reversed(relay_hops):
+                return_hops.append(hop)
+            return_hops.append(sender_mac_str)
             
             send_espnow_msg(
-                target_mac_str=sender_mac_str,
+                target_mac_str=return_hops[0],
                 msg_dict={
                     "msg_type": "ACK",
                     "payload": {
@@ -769,7 +785,7 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
                         "sleep_sec": int(next_wake_delay_ms // 1000)
                     }
                 },
-                routing_path=packet.get("hops", [sender_mac_str]),
+                routing_path=return_hops,
                 target_id=device_id
             )
 

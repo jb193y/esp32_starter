@@ -161,8 +161,12 @@ def handle_hub_commands(cmd_or_packet, args_or_sender=None):
         _cmd_queue.append((cmd, data, sender_mac))
     elif msg_type == "ACK":
         status_val = data.get("status") if isinstance(data, dict) else None
+        cfg = config.load_config()
         if status_val == "sleep_ok":
-            print(" Hub returned SLEEP_OK.")
+            if cfg.get("client", {}).get("deep_sleep_enabled", True):
+                print(" Hub returned SLEEP_OK.")
+            else:
+                print(" Hub ACK: Telemetry received (Continuous Mode).")
         else:
             print(" Hub ACK:", status_val)
 
@@ -191,6 +195,7 @@ def execute_command(cmd, args, sender_mac=None):
         any_open = any(v.get("state") == "OPEN" for v in valves.values())
         espnow_client.send_ack_or_tele_to_hub("ACK", {
             "status": "VALVES_UPDATED",
+            "cmd": "SET_VALVES",
             "valves": {vid: v["state"] for vid, v in valves.items()},
             "node_status": "watering" if any_open else "valve_idle"
         }, target_mac=sender_mac)
@@ -203,6 +208,7 @@ def execute_command(cmd, args, sender_mac=None):
         any_open = any(v.get("state") == "OPEN" for v in valves.values())
         espnow_client.send_ack_or_tele_to_hub("ACK", {
             "status": "VALVES_UPDATED",
+            "cmd": cmd,
             "valves": {vid: v["state"] for vid, v in valves.items()},
             "node_status": "watering" if any_open else "valve_idle"
         }, target_mac=sender_mac)
@@ -526,9 +532,6 @@ def main():
     else:
         # Continuous Running Loop (Non-sleep mode)
         print(" [Power Mode] Continuous Loop Active (Deep sleep disabled).")
-        heartbeats = {"esp_now": time.time()}
-        _thread.start_new_thread(espnow_client.client_tx_loop, ())
-        _thread.start_new_thread(espnow_client.client_listen_loop, (heartbeats, handle_hub_commands))
         
         while True:
             try:

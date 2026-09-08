@@ -573,11 +573,14 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                 # Provisioned node that lost contact with parent/hub: active recovery probing
                 send_recovery_probe()
         else:
-            # Cascaded Beacon Re-broadcasting by Confirmed Paired Relay Nodes during Discovery Window
+            # Cascaded Beacon Re-broadcasting ONLY by dedicated Relay/Repeater Nodes during Discovery Window
             current_cfg = config.load_config()
-            client_mode = current_cfg.get("client", {}).get("mode", "ble_setup")
-            if client_mode == "normal" and int(time.time()) < _discovery_awake_until:
-                if time.time() - _last_beacon_broadcast_time >= 2.0:
+            client_cfg = current_cfg.get("client", {})
+            client_mode = client_cfg.get("mode", "ble_setup")
+            is_relay = client_cfg.get("is_relay", False) or client_cfg.get("type", "").lower() in ("repeater", "relay")
+            
+            if is_relay and client_mode == "normal" and int(time.time()) < _discovery_awake_until:
+                if time.time() - _last_beacon_broadcast_time >= 4.0:
                     _last_beacon_broadcast_time = time.time()
                     p_mac = current_cfg.get("parent", {}).get("mac", "")
                     h_mac = current_cfg.get("hub", {}).get("mac", "")
@@ -790,7 +793,8 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                             if delay_ms is not None:
                                 try:
                                     _next_wake_delay_ms = int(delay_ms)
-                                    print(f" [Sleep Sync] Closed-loop sleep sync from Hub: {_next_wake_delay_ms}ms")
+                                    if current_cfg.get("client", {}).get("deep_sleep_enabled", True):
+                                        print(f" [Sleep Sync] Closed-loop sleep sync from Hub: {_next_wake_delay_ms}ms")
                                 except Exception:
                                     pass
 

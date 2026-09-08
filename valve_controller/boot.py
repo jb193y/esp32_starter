@@ -17,5 +17,5 @@ print(" Total Memory:", alloc + free, "bytes")
 print(" Free Memory:", free, "bytes")
 
 print(">>> VALVE boot.py COMPLETED <<<")
-
+print("aryan")
 import main

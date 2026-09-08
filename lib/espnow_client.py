@@ -573,11 +573,12 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                 # Provisioned node that lost contact with parent/hub: active recovery probing
                 send_recovery_probe()
         else:
-            # Cascaded Beacon Re-broadcasting by Paired Relay Nodes during Discovery Window
-            if int(time.time()) < _discovery_awake_until:
+            # Cascaded Beacon Re-broadcasting by Confirmed Paired Relay Nodes during Discovery Window
+            current_cfg = config.load_config()
+            client_mode = current_cfg.get("client", {}).get("mode", "ble_setup")
+            if client_mode == "normal" and int(time.time()) < _discovery_awake_until:
                 if time.time() - _last_beacon_broadcast_time >= 2.0:
                     _last_beacon_broadcast_time = time.time()
-                    current_cfg = config.load_config()
                     p_mac = current_cfg.get("parent", {}).get("mac", "")
                     h_mac = current_cfg.get("hub", {}).get("mac", "")
                     ch = current_cfg.get("wifi", {}).get("channel", 6)
@@ -719,7 +720,8 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                     # Handle Route/Parent Discovery packets
                     if msg_type == "DISCOVERY_REQ":
                         current_cfg = config.load_config()
-                        if _paired and (time.time() - _last_hub_rx_time < 60):
+                        client_mode = current_cfg.get("client", {}).get("mode", "ble_setup")
+                        if _paired and client_mode == "normal" and (time.time() - _last_hub_rx_time < 60):
                             sender_mac = bytes_to_mac(host)
                             hub_mac = current_cfg.get("hub", {}).get("mac", "")
                             channel = current_cfg.get("wifi", {}).get("channel", 6)

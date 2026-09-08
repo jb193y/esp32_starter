@@ -551,11 +551,14 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
         if site == "default_site":
             return
 
-        nodes = load_nodes()
-        node_info = nodes.get(sender_mac_str, {})
-        node_type = (data.get("node_type") or node_info.get("node_type", "node")).lower()
-        device_id = (data.get("node_id") or node_info.get("node_id", sender_mac_str.replace(':', ''))).lower()
+        actual_mac = data.get("mac") or sender_mac_str
+        node_type = (data.get("node_type") or "node").lower()
+        device_id = (data.get("node_id") or actual_mac.replace(':', '')).lower()
+        custom_name = data.get("custom_name") or device_id
         step = data.get("step") or ("CLAIM_PENDING" if data.get("status") == "BLE_CLAIM_PENDING" else data.get("status", "CLAIM_PENDING"))
+
+        # Save node to registry so Hub can resolve target_node when backend sends CONFIRM_PROVISION
+        save_node(actual_mac, node_type, node_id=device_id, name=custom_name, parent=sender_mac_str)
 
         prov_payload = message_builder.build_mqtt_payload(
             source=device_id,
@@ -566,8 +569,8 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
                 "status": "BLE_CLAIM_PENDING",
                 "device_id": device_id,
                 "node_type": node_type.upper(),
-                "mac": sender_mac_str,
-                "custom_name": data.get("custom_name") or node_info.get("custom_name", device_id)
+                "mac": actual_mac,
+                "custom_name": custom_name
             },
             route_transport="ESPNOW",
             route_id=packet.get("route", {}).get("route_id") or packet.get("route", {}).get("rid", "direct"),
@@ -576,7 +579,7 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
         )
         prov_topic = f"{site}/{group}/{node_type}/{device_id}/provisioning"
         mqtt_client.publish_msg(prov_topic, prov_payload, retain=False)
-        print(f" [Provisioning] Node {device_id} step '{step}' forwarded to {prov_topic}")
+        print(f" [Provisioning] Node {device_id} ({actual_mac}) registered & forwarded to {prov_topic}")
 
     elif msg_type == "STATUS":
         site = cfg.get("client", {}).get("site", "default_site")
@@ -584,11 +587,14 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
         if site == "default_site":
             return
 
-        nodes = load_nodes()
-        node_info = nodes.get(sender_mac_str, {})
-        node_type = (data.get("node_type") or node_info.get("node_type", "node")).lower()
-        device_id = (data.get("node_id") or node_info.get("node_id", sender_mac_str.replace(':', ''))).lower()
+        actual_mac = data.get("mac") or sender_mac_str
+        node_type = (data.get("node_type") or "node").lower()
+        device_id = (data.get("node_id") or actual_mac.replace(':', '')).lower()
+        custom_name = data.get("custom_name") or device_id
         node_status = data.get("status", "online")
+
+        # Save/update node in registry
+        save_node(actual_mac, node_type, node_id=device_id, name=custom_name, parent=sender_mac_str)
 
         status_payload = message_builder.build_mqtt_payload(
             source=device_id,
@@ -598,8 +604,8 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
                 "device_id": device_id,
                 "status": node_status,
                 "node_type": node_type.upper(),
-                "mac": sender_mac_str,
-                "custom_name": data.get("custom_name") or node_info.get("custom_name", device_id)
+                "mac": actual_mac,
+                "custom_name": custom_name
             },
             route_transport="ESPNOW",
             route_id=packet.get("route", {}).get("route_id") or packet.get("route", {}).get("rid", "direct"),
@@ -607,7 +613,7 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
             hops=packet.get("hops", [])
         )
         mqtt_client.publish_msg(f"{site}/{group}/{node_type}/{device_id}/status", status_payload, retain=True)
-        print(f" Node {device_id} ({sender_mac_str}) status '{node_status}' forwarded to MQTT")
+        print(f" Node {device_id} ({actual_mac}) status '{node_status}' registered & forwarded to MQTT")
 
     elif msg_type in ("TELE", "TELEMETRY"):
         site = cfg.get("client", {}).get("site", "default_site")

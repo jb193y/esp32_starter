@@ -623,18 +623,28 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
 
         nodes = load_nodes()
         
-        # Resolve original sender MAC address from packet source ID
+        # Resolve original sender MAC address from packet source ID or payload MAC
         original_sender_mac = None
         for mac, info in nodes.items():
             if info.get("node_id") == source or info.get("custom_name") == source:
-                original_sender_mac = mac
+                original_sender_mac = mac.lower()
                 break
+        
         if not original_sender_mac:
-            original_sender_mac = sender_mac_str
+            if isinstance(data, dict) and data.get("mac"):
+                original_sender_mac = str(data["mac"]).lower()
+            elif isinstance(data, dict) and data.get("node_mac"):
+                original_sender_mac = str(data["node_mac"]).lower()
+            else:
+                original_sender_mac = sender_mac_str.lower()
+            
+            # Auto-register leaf node into nodes registry
+            guessed_type = "valve" if (source and "valve" in source.lower()) else ("pump" if (source and "pump" in source.lower()) else "node")
+            save_node(original_sender_mac, guessed_type, node_id=source or original_sender_mac.replace(':', ''), parent=sender_mac_str)
 
         node_info = nodes.get(original_sender_mac, {})
-        node_type = node_info.get("node_type", "node").lower()
-        device_id = node_info.get("node_id", original_sender_mac.replace(':', '')).lower()
+        node_type = node_info.get("node_type", "valve" if (source and "valve" in source.lower()) else "node").lower()
+        device_id = source or node_info.get("node_id", original_sender_mac.replace(':', '')).lower()
 
         tele_topic = f"{site}/{group}/{node_type}/{device_id}/telemetry"
         tele_payload = data.copy() if isinstance(data, dict) else {"data": data}
@@ -658,14 +668,16 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
         incoming_hops = packet.get("hops", [])
         relay_hops = []
         if incoming_hops:
-            relay_hops = list(incoming_hops)
-            if len(relay_hops) > 0 and (relay_hops[-1].lower() == hub_sta_mac.lower() or relay_hops[-1].lower() == hub_ap_mac.lower()):
+            relay_hops = [h.lower() for h in incoming_hops]
+            if len(relay_hops) > 0 and (relay_hops[-1] == hub_sta_mac.lower() or relay_hops[-1] == hub_ap_mac.lower()):
                 relay_hops.pop()
         
         return_hops = []
         for hop in reversed(relay_hops):
-            return_hops.append(hop)
-        return_hops.append(original_sender_mac)
+            if hop not in return_hops:
+                return_hops.append(hop)
+        if original_sender_mac.lower() not in return_hops:
+            return_hops.append(original_sender_mac.lower())
 
         # Closed-Loop Sleep Window Calculation:
         # Default global cycle = 30000ms (25s sleep, 5s awake).

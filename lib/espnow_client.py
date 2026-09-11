@@ -309,6 +309,13 @@ def send_ack_or_tele_to_hub(msg_type, payload, target_mac=None):
     if is_broadcast:
         hops = ["ff:ff:ff:ff:ff:ff"]
 
+    # Include local STA MAC in payload so Hub can accurately resolve origin and build return route
+    sta = network.WLAN(network.STA_IF)
+    local_mac = bytes_to_mac(sta.config('mac'))
+    if isinstance(payload, dict):
+        payload.setdefault("mac", local_mac)
+        payload.setdefault("node_mac", local_mac)
+
     envelope = message_builder.build_espnow_envelope(
         source_id,
         target_id,

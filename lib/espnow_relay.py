@@ -103,7 +103,9 @@ def process_and_relay(packet):
     # 1. Check if packet target is us (case-insensitive) or broadcast
     if target:
         t_lower = target.lower()
-        if t_lower == local_id:
+        if (t_lower == local_id or 
+            t_lower == local_mac.replace(':', '').lower() or 
+            t_lower == local_mac.lower()):
             print(" Packet reached final target destination.")
             return True
         if t_lower in ("broadcast", "ff:ff:ff:ff:ff:ff"):

@@ -91,10 +91,10 @@ python utils/flash_esp32.py valve_controller COM4
 ### Option B: Manual Step-by-Step via esptool
 ```powershell
 # 1. Erase Flash
-python -m esptool --port COM4 --chip esp32s3 erase_flash
+python -m esptool --port COM4 --chip esp32s3 erase-flash
 
 # 2. Flash MicroPython Binary
-python -m esptool --port COM4 --chip esp32s3 write_flash -z 0x0 ./firmware/ESP32_GENERIC_S3-20260824-v1.29.0.bin
+python -m esptool --port COM4 --chip esp32s3 write-flash -z 0x0 ./firmware/ESP32_GENERIC_S3-20260824-v1.29.0.bin
 
 # 3. Deploy Application Code & Config
 python utils/flash_esp32.py valve_controller COM4

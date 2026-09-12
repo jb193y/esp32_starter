@@ -215,21 +215,21 @@ def run_erase_flash_and_firmware(port, chip="esp32s3", firmware_path=None, proje
     print(f"\n=======================================================")
     print(f" 1. Erasing entire flash on {port} ({chip})...")
     print(f"=======================================================")
-    cmd_erase = [sys.executable, "-m", "esptool", "--port", port, "--chip", chip, "erase_flash"]
+    cmd_erase = [sys.executable, "-m", "esptool", "--port", port, "--chip", chip, "erase-flash"]
     print("Executing:", " ".join(cmd_erase))
     res = subprocess.run(cmd_erase)
     if res.returncode != 0:
-        print(f"\n[ERROR] esptool erase_flash failed with code {res.returncode}")
+        print(f"\n[ERROR] esptool erase-flash failed with code {res.returncode}")
         sys.exit(1)
 
     print(f"\n=======================================================")
     print(f" 2. Writing MicroPython Firmware ({os.path.basename(firmware_path)})...")
     print(f"=======================================================")
-    cmd_write = [sys.executable, "-m", "esptool", "--port", port, "--chip", chip, "--baud", "460800", "write_flash", "-z", "0x0", firmware_path]
+    cmd_write = [sys.executable, "-m", "esptool", "--port", port, "--chip", chip, "--baud", "460800", "write-flash", "-z", "0x0", firmware_path]
     print("Executing:", " ".join(cmd_write))
     res = subprocess.run(cmd_write)
     if res.returncode != 0:
-        print(f"\n[ERROR] esptool write_flash failed with code {res.returncode}")
+        print(f"\n[ERROR] esptool write-flash failed with code {res.returncode}")
         sys.exit(1)
 
     print("\nFirmware flashed successfully! Waiting for board initialization...")

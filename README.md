@@ -81,17 +81,17 @@ If flashing a brand new ESP32 / ESP32-S3 module that does not yet have MicroPyth
 
 ```powershell
 # 1. Erase Flash
-python -m esptool --port COM9 --chip esp32s3 erase-flash
+python -m esptool --port COM4 --chip esp32s3 erase-flash
 OR
-esptool.py --chip esp32s3 --port COM9 erase-flash
+esptool.py --chip esp32s3 --port COM4 erase-flash
 
 # 2. Flash MicroPython Binary
-python -m esptool --port COM9 --chip esp32s3 write-flash -z 0x0 ./firmware/ESP32_GENERIC_S3-20260824-v1.29.0.bin
+python -m esptool --port COM4 --chip esp32s3 write-flash -z 0x0 ./firmware/ESP32_GENERIC_S3-20260824-v1.29.0.bin
 OR
-esptool.py --chip esp32s3 --port COM9 --baud 460800 write-flash -z 0x0 ./firmware/ESP32_GENERIC_S3-20260824-v1.29.0.bin
+esptool.py --chip esp32s3 --port COM4 --baud 460800 write-flash -z 0x0 ./firmware/ESP32_GENERIC_S3-20260824-v1.29.0.bin
 
 # 3. Deploy Application Code & Config
-python utils/flash_esp32.py valve_controller COM9
+python utils/flash_esp32.py valve_controller COM4
 ```
 
 ---

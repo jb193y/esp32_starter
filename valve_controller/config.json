@@ -1,7 +1,7 @@
 {
   "client": {
-    "id": "valve_node_26",
-    "custom_name": "COM26",
+    "id": "valve_node_21",
+    "custom_name": "COM21",
     "type": "valve",
     "controller_type": "YD-ESP32-S3 2022-V1.3",
     "board_type": "YD-ESP32-S3 2022-V1.3",
@@ -23,7 +23,7 @@
     "mac": "dc:b4:d9:14:23:3c"
   },
   "parent": {
-    "mac": "a0:f2:62:e0:02:d4"
+    "mac": "dc:b4:d9:14:2d:ac"
   },
   "valves": [
     {

@@ -130,6 +130,15 @@ def process_and_relay(packet):
             print(" Routing error: no next hop and we are not the target.")
             return False
 
+        # If next hop is the Hub, but this relay itself has an upstream parent, dynamically expand hops
+        p_mac = cfg.get("parent", {}).get("mac", "")
+        h_mac = cfg.get("hub", {}).get("mac", "")
+        if (hops[next_hop_index].lower() == h_mac.lower() and 
+            is_valid_mac(p_mac) and 
+            p_mac.lower() != h_mac.lower() and 
+            p_mac.lower() != local_mac.lower()):
+            hops.insert(next_hop_index, p_mac)
+
         next_hop_mac = hops[next_hop_index]
         next_hop_bytes = mac_to_bytes(next_hop_mac)
 

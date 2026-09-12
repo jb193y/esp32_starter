@@ -9,7 +9,7 @@
     "firmware_version": "hub_v1.0.0",
     "neopixel_pin": 48,
     "status_led": null,
-    "mode": "ble_setup",
+    "mode": "normal",
     "espnow_only": false,
     "espnow_test_peer": "dc:b4:d9:14:2d:50",
     "espnow_broadcast_only": false,

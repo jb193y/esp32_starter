@@ -111,7 +111,10 @@ def extract_complete_frame(buf):
     
     # Handle direct un-framed JSON payloads (e.g. b'{"pld"...')
     if buf[0] == 0x7b:
-        return buf, b""
+        clean = buf.strip()
+        if clean.endswith(b'}'):
+            return clean, b""
+        return None, buf
 
     frame_len = int.from_bytes(buf[:2], 'big')
     total_len = 2 + frame_len
@@ -671,16 +674,18 @@ def process_espnow_frame(sender_mac_str, payload_bytes):
         incoming_hops = packet.get("hops", [])
         relay_hops = []
         if incoming_hops:
-            relay_hops = [h.lower() for h in incoming_hops]
+            relay_hops = [h.strip().lower() for h in incoming_hops if h]
             if len(relay_hops) > 0 and (relay_hops[-1] == hub_sta_mac.lower() or relay_hops[-1] == hub_ap_mac.lower()):
                 relay_hops.pop()
         
         return_hops = []
         for hop in reversed(relay_hops):
-            if hop not in return_hops:
-                return_hops.append(hop)
-        if original_sender_mac.lower() not in return_hops:
-            return_hops.append(original_sender_mac.lower())
+            h_norm = hop.strip().lower()
+            if h_norm and h_norm not in return_hops:
+                return_hops.append(h_norm)
+        orig_norm = (original_sender_mac or sender_mac_str).strip().lower()
+        if orig_norm and orig_norm not in return_hops:
+            return_hops.append(orig_norm)
 
         # Closed-Loop Sleep Window Calculation:
         # Default global cycle = 30000ms (25s sleep, 5s awake).

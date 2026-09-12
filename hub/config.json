@@ -1,11 +1,11 @@
 {
   "client": {
-    "id": "hub_master_02",
+    "id": "hub_master_01",
     "type": "hub",
     "site": "loc001",
     "controller_type": "ESP32-S3-DevKit v1.0",
     "board_type": "ESP32-S3-DevKit v1.0",
-    "custom_name": "AgriPulse Master Hub",
+    "custom_name": "AgriPulse Master Hub (COM20)",
     "firmware_version": "hub_v1.0.0",
     "neopixel_pin": 48,
     "status_led": null,

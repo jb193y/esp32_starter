@@ -168,7 +168,10 @@ def extract_complete_frame(buf):
     
     # Handle direct un-framed JSON payloads (e.g. b'{"pld"...')
     if buf[0] == 0x7b:
-        return buf, b""
+        clean = buf.strip()
+        if clean.endswith(b'}'):
+            return clean, b""
+        return None, buf
 
     frame_len = int.from_bytes(buf[:2], 'big')
     total_len = 2 + frame_len
@@ -761,13 +764,24 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                     if msg_type == "DISCOVERY_RESP" and is_for_us:
                         resp_data = packet.get("data") or packet.get("pld", {})
                         hub_mac = resp_data.get("hub_mac")
-                        parent_mac = resp_data.get("parent_mac")
+                        parent_mac = resp_data.get("parent_mac") or sender_mac
                         ch = resp_data.get("channel")
-                        hop_count = resp_data.get("hop_count")
+                        hop_count = resp_data.get("hop_count", 99)
                         hub_freshness = resp_data.get("hub_freshness", 999)
                         
                         print(f" Received DISCOVERY_RESP from {sender_mac} (Hub={hub_mac}, Channel={ch}, Hops={hop_count})")
                         
+                        # Only update parent if we are un-paired OR if the new parent offers strictly fewer hops to Hub
+                        current_cfg = config.load_config()
+                        curr_parent = current_cfg.get("parent", {}).get("mac", "").lower()
+                        curr_hub = current_cfg.get("hub", {}).get("mac", "").lower()
+                        curr_hops = 1 if (curr_parent and curr_parent == curr_hub) else (99 if not curr_parent else 2)
+                        
+                        # Don't adopt parent if it is ourselves or has higher/equal hop count
+                        if parent_mac.lower() == local_mac.lower() or (hop_count >= curr_hops and _paired):
+                            print(f" Ignoring DISCOVERY_RESP: current hops ({curr_hops}) is already better or equal to offered {hop_count}")
+                            continue
+
                         try:
                             upd = {
                                 "hub": {"mac": hub_mac},
@@ -775,11 +789,12 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                                 "wifi": {"channel": ch}
                             }
                             config.update_config(upd)
-                            set_wifi_channel(ch)
+                            if ch:
+                                set_wifi_channel(ch)
                             
                             _paired = True
                             _last_hub_rx_time = time.time() - hub_freshness
-                            print(f" Discovered route: parent={parent_mac}, hub={hub_mac}, locked to channel {ch}")
+                            print(f" Discovered route: parent={parent_mac}, hub={hub_mac}, locked to channel {ch} (Hops: {hop_count})")
                         except Exception as ex:
                             print(" Error saving discovered route:", ex)
                         continue

@@ -115,8 +115,13 @@ def client_tx_loop():
                 continue
                 
             try:
+                cfg = config.load_config()
+                client_cfg = cfg.get("client", {})
+                max_retries = int(client_cfg.get("espnow_max_retries", 3))
+                retry_delay = int(client_cfg.get("espnow_retry_delay_ms", 50))
+
                 add_peer_safe(_e, next_hop_bytes)
-                res = config.send_fragmented(_e, next_hop_bytes, payload_bytes)
+                res = config.send_fragmented(_e, next_hop_bytes, payload_bytes, max_retries=max_retries, retry_delay_ms=retry_delay)
                 print(f" [TX Queue] Envelope sent to next hop {phys_mac} for destination {target_id} (res={res})")
                 try:
                     print(payload_bytes[2:].decode('utf-8'))

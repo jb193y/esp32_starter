@@ -153,25 +153,32 @@ def compact_json(obj):
             res.append(char)
     return "".join(res)
 
-def send_fragmented(e, peer_bytes, frame_bytes, chunk_size=240, delay_ms=10):
+def send_fragmented(e, peer_bytes, frame_bytes, chunk_size=240, delay_ms=25, max_retries=3, retry_delay_ms=50):
     import time
     total_len = len(frame_bytes)
+    
+    def _send_single_chunk(chunk):
+        for attempt in range(1, max_retries + 1):
+            try:
+                res = e.send(peer_bytes, chunk)
+                if res is not False:
+                    return True
+            except Exception as ex:
+                pass
+            if attempt < max_retries:
+                time.sleep_ms(retry_delay_ms * attempt)
+        return False
+
     if total_len <= chunk_size:
-        return e.send(peer_bytes, frame_bytes)
+        return _send_single_chunk(frame_bytes)
         
     offset = 0
-    success = True
     while offset < total_len:
         chunk = frame_bytes[offset:offset+chunk_size]
-        try:
-            res = e.send(peer_bytes, chunk)
-            if res is False:
-                success = False
-        except Exception as ex:
-            print("Error sending chunk:", ex)
-            success = False
+        if not _send_single_chunk(chunk):
+            return False
         offset += chunk_size
         if offset < total_len:
             time.sleep_ms(delay_ms)
             
-    return success
+    return True

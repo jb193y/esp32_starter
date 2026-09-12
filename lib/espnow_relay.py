@@ -161,8 +161,12 @@ def process_and_relay(packet):
             if _enqueue_fn is not None:
                 _enqueue_fn(next_hop_bytes, config.make_frame(payload_str), next_hop_mac, packet.get("dst", "unknown"))
             else:
+                cfg = config.load_config()
+                client_cfg = cfg.get("client", {})
+                max_retries = int(client_cfg.get("espnow_max_retries", 3))
+                retry_delay = int(client_cfg.get("espnow_retry_delay_ms", 50))
                 add_peer_safe(_e, next_hop_bytes)
-                config.send_fragmented(_e, next_hop_bytes, config.make_frame(payload_str))
+                config.send_fragmented(_e, next_hop_bytes, config.make_frame(payload_str), max_retries=max_retries, retry_delay_ms=retry_delay)
             print(" Packet relayed successfully.")
         except Exception as e:
             print(f" Failed to relay packet to next hop: {e}")

@@ -533,6 +533,13 @@ def main():
         # Continuous Running Loop (Non-sleep mode)
         print(" [Power Mode] Continuous Loop Active (Deep sleep disabled).")
         
+        # Determine Mesh Tier (Tier 1 = Direct/Relay, Tier 2 = Leaf multi-hop)
+        hub_mac = cfg.get("hub", {}).get("mac", "")
+        parent_mac = cfg.get("parent", {}).get("mac", "")
+        is_leaf = bool(parent_mac and parent_mac != hub_mac and parent_mac != "00:00:00:00:00:00")
+        mesh_tier = 2 if is_leaf else 1
+        tier_offset = 0 if mesh_tier >= 2 else 2.5
+
         while True:
             try:
                 gc.collect()
@@ -542,10 +549,10 @@ def main():
                     cmd, args, sender_mac = _cmd_queue.pop(0)
                     execute_command(cmd, args, sender_mac)
 
-                # Send periodic telemetry
+                # Send periodic telemetry (staggered by tier to prevent RF collisions)
                 if espnow_client.is_paired():
                     now = time.time()
-                    if now - last_telemetry_time >= next_telemetry_delay:
+                    if now - last_telemetry_time >= (next_telemetry_delay + tier_offset):
                         last_telemetry_time = now
                         any_open = any(v.get("state") == "OPEN" for v in valves.values())
                         node_status = "watering" if any_open else "valve_idle"

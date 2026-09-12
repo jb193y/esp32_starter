@@ -229,12 +229,15 @@ def send_espnow_msg(target_mac_str, msg_dict, routing_path=None, target_id=None)
     phys_mac = "ff:ff:ff:ff:ff:ff" if broadcast_only else ((routing_path[0] if routing_path else target_mac_str) or "ff:ff:ff:ff:ff:ff")
     next_hop_bytes = mac_to_bytes(phys_mac)
 
+    max_retries = int(cfg.get("client", {}).get("espnow_max_retries", 3))
+    retry_delay = int(cfg.get("client", {}).get("espnow_retry_delay_ms", 50))
+
     try:
         payload_str = config.compact_json(envelope)
         frame_bytes = config.make_frame(payload_str)
         if phys_mac != "ff:ff:ff:ff:ff:ff":
             add_peer_safe(_e, next_hop_bytes)
-        return config.send_fragmented(_e, next_hop_bytes, frame_bytes)
+        return config.send_fragmented(_e, next_hop_bytes, frame_bytes, max_retries=max_retries, retry_delay_ms=retry_delay)
     except Exception as e:
         print(" Failed to send ESP-NOW packet:", e)
         return False
@@ -1130,9 +1133,10 @@ def espnow_receiver_thread(heartbeats=None):
             sender_mac_str = bytes_to_mac(host)
             print(f" [Hub ESP-NOW RX] Received {len(msg)} bytes from {sender_mac_str}")
             
-            if now - recv_last_seen.get(sender_mac_str, now) > 10:
+            now_t = time.time()
+            if now_t - recv_last_seen.get(sender_mac_str, now_t) > 10:
                 recv_buffers[sender_mac_str] = b""
-            recv_last_seen[sender_mac_str] = now
+            recv_last_seen[sender_mac_str] = now_t
 
             if sender_mac_str not in recv_buffers:
                 recv_buffers[sender_mac_str] = b""

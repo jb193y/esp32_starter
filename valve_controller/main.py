@@ -61,6 +61,7 @@ def load_valve_states():
 
     # 2. Fallback to flash file
     try:
+        # pyrefly: ignore [missing-import]
         import ujson
         import os
         if "valve_states.json" in os.listdir():

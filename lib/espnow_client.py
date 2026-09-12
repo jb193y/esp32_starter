@@ -495,17 +495,10 @@ def send_pairing_request():
 
 def is_paired():
     global _paired
-    if _paired:
-        return True
-    cfg = config.load_config()
-    hub_mac = cfg.get("hub", {}).get("mac", "") or cfg.get("parent", {}).get("mac", "")
-    if is_valid_mac(hub_mac) and hub_mac not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"):
-        _paired = True
-        return True
-    return False
+    return _paired
 
 def init_espnow_client(on_cmd_received_fn=None):
-    global _e, _stop_requested
+    global _e, _stop_requested, _paired
     if not has_espnow:
         print(" ESP-NOW not supported on this firmware build.")
         return None
@@ -534,11 +527,13 @@ def init_espnow_client(on_cmd_received_fn=None):
     
     espnow_relay.init_relay_engine(_e, lambda next_hop_bytes, payload_bytes, phys_mac, target_id: tx_queue.put((next_hop_bytes, payload_bytes, phys_mac, target_id)))
     
+    hub_mac = cfg.get("hub", {}).get("mac", "") or cfg.get("parent", {}).get("mac", "")
+    _paired = is_valid_mac(hub_mac) and hub_mac not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff")
+
     # If not paired, start passive beacon scan
-    if not is_paired():
+    if not _paired:
         passive_beacon_scan()
     else:
-        hub_mac = cfg.get("hub", {}).get("mac", "") or cfg.get("parent", {}).get("mac", "")
         print(f" Node paired with Hub/Parent {hub_mac} on Channel {ch}")
         
     return _e
@@ -567,6 +562,7 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
         if _paired and time.time() - _last_hub_rx_time > 45:
             print(" Lost contact with Hub for 45s. Re-entering Recovery Mode...")
             _paired = False
+            _last_hub_rx_time = time.time()
 
         if not _paired:
             current_cfg = config.load_config()
@@ -786,11 +782,15 @@ def client_listen_loop(heartbeats=None, on_cmd_received_fn=None):
                     # Relaying and target validation
                     is_actually_for_us = espnow_relay.process_and_relay(packet)
 
-                    # Update RX timestamp if packet is from Hub
+                    # Update RX timestamp if packet is from Hub, Parent, or targeted to us
                     current_cfg = config.load_config()
-                    paired_hub = current_cfg.get("hub", {}).get("mac", "")
-                    if sender_mac.lower().replace(':', '') == paired_hub.lower().replace(':', ''):
+                    paired_hub = current_cfg.get("hub", {}).get("mac", "").lower().replace(':', '')
+                    paired_parent = current_cfg.get("parent", {}).get("mac", "").lower().replace(':', '')
+                    s_clean = sender_mac.lower().replace(':', '')
+                    if s_clean == paired_hub or s_clean == paired_parent or is_actually_for_us:
                         _last_hub_rx_time = time.time()
+                        if not _paired:
+                            _paired = True
 
                     if is_actually_for_us:
                         payload = packet.get("data") or packet.get("pld", {})

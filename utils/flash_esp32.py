@@ -235,6 +235,100 @@ def run_erase_flash_and_firmware(port, chip="esp32s3", firmware_path=None, proje
     print("\nFirmware flashed successfully! Waiting for board initialization...")
     time.sleep(2.5)
 
+NODE_PORT_PRESETS = {
+    "valve_controller": {
+        "COM11": {
+            "id": "valve_node_11",
+            "custom_name": "COM11",
+            "parent_mac": "dc:b4:d9:14:23:3c",  # Direct child of Hub
+            "hub_mac": "dc:b4:d9:14:23:3c",
+        },
+        "COM21": {
+            "id": "valve_node_21",
+            "custom_name": "COM21",
+            "parent_mac": "dc:b4:d9:14:2d:ac",  # Child of COM11
+            "hub_mac": "dc:b4:d9:14:23:3c",
+        },
+        "COM25": {
+            "id": "valve_node_25",
+            "custom_name": "COM25",
+            "parent_mac": "dc:b4:d9:14:2d:50",  # Child of COM21
+            "hub_mac": "dc:b4:d9:14:23:3c",
+        },
+        "COM26": {
+            "id": "valve_node_26",
+            "custom_name": "COM26",
+            "parent_mac": "a0:f2:62:e0:02:d4",  # Child of COM25
+            "hub_mac": "dc:b4:d9:14:23:3c",
+        },
+    },
+    "hub": {
+        "COM20": {
+            "id": "hub_master_01",
+            "custom_name": "AgriPulse Master Hub (COM20)",
+        },
+        "COM24": {
+            "id": "hub_master_02",
+            "custom_name": "AgriPulse Master Hub (COM24)",
+        }
+    }
+}
+
+def apply_port_config_overrides(target_dir, component_type, port):
+    """Dynamically adjust config.json on disk to match COM port configuration preset."""
+    config_path = os.path.join(target_dir, "config.json")
+    if not os.path.exists(config_path):
+        return
+
+    port_upper = port.upper()
+    digits = ''.join(c for c in port_upper if c.isdigit()) or "01"
+    
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not read {config_path} to apply port overrides: {e}")
+        return
+
+    presets = NODE_PORT_PRESETS.get(component_type, {}).get(port_upper, {})
+    
+    if "client" not in cfg or not isinstance(cfg["client"], dict):
+        cfg["client"] = {}
+
+    # Override node id and custom name
+    if "id" in presets:
+        cfg["client"]["id"] = presets["id"]
+    elif component_type == "valve_controller":
+        cfg["client"]["id"] = f"valve_node_{digits}"
+    elif component_type == "hub":
+        cfg["client"]["id"] = f"hub_master_{digits}"
+    else:
+        cfg["client"]["id"] = f"{component_type}_{digits}"
+
+    if "custom_name" in presets:
+        cfg["client"]["custom_name"] = presets["custom_name"]
+    else:
+        cfg["client"]["custom_name"] = port_upper
+
+    # Override parent and hub MACs if applicable
+    if "parent_mac" in presets:
+        if "parent" not in cfg or not isinstance(cfg["parent"], dict):
+            cfg["parent"] = {}
+        cfg["parent"]["mac"] = presets["parent_mac"]
+
+    if "hub_mac" in presets:
+        if "hub" not in cfg or not isinstance(cfg["hub"], dict):
+            cfg["hub"] = {}
+        cfg["hub"]["mac"] = presets["hub_mac"]
+
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        parent_info = f", parent={cfg.get('parent', {}).get('mac')}" if 'parent' in cfg else ""
+        print(f" [Auto-Config] Applied preset for {port_upper}: id={cfg['client']['id']}, custom_name={cfg['client']['custom_name']}{parent_info}")
+    except Exception as e:
+        print(f"Warning: Failed to save updated config for {port}: {e}")
+
 def main():
     import argparse
 
@@ -248,6 +342,7 @@ def main():
     parser.add_argument("--chip", default="esp32s3", help="ESP32 chip type (e.g., 'esp32s3', 'esp32'). Default is 'esp32s3'.")
     parser.add_argument("--firmware", default=None, help="Path to MicroPython firmware .bin file. Defaults to latest in ./firmware/.")
     parser.add_argument("--clean", "--erase-fs", action="store_true", dest="clean_fs", help="Wipe all files on device filesystem before sync.")
+    parser.add_argument("--no-auto-config", action="store_true", help="Disable automatic COM port preset injection into config.json.")
     args = parser.parse_args()
 
     target_dir = os.path.join(project_root, args.type)
@@ -255,6 +350,11 @@ def main():
         print(f"Error: Target directory {target_dir} does not exist.")
         sys.exit(1)
 
+    # 1. Apply port-specific config preset unless disabled
+    if not args.no_auto_config:
+        apply_port_config_overrides(target_dir, args.type, args.port)
+
+    # 2. Run optional full flash erase & firmware write
     if args.erase_flash:
         run_erase_flash_and_firmware(args.port, chip=args.chip, firmware_path=args.firmware, project_root=project_root)
 

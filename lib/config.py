@@ -76,6 +76,21 @@ def update_config(data):
     save_config(cfg)
     return cfg
 
+def is_valid_mac(mac_str):
+    if not isinstance(mac_str, str):
+        return False
+    parts = mac_str.split(':')
+    if len(parts) != 6:
+        return False
+    try:
+        for p in parts:
+            if len(p) != 2:
+                return False
+            int(p, 16)
+        return True
+    except ValueError:
+        return False
+
 def get_unix_time():
     import time
     t = time.time()

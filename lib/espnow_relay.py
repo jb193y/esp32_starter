@@ -10,6 +10,21 @@ import config
 _e = None
 _enqueue_fn = None
 
+def is_valid_mac(mac_str):
+    if not isinstance(mac_str, str):
+        return False
+    parts = mac_str.split(':')
+    if len(parts) != 6:
+        return False
+    try:
+        for p in parts:
+            if len(p) != 2:
+                return False
+            int(p, 16)
+        return True
+    except ValueError:
+        return False
+
 def mac_to_bytes(mac_str):
     return bytes(int(x, 16) for x in mac_str.split(':'))
 

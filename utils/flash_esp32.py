@@ -8,8 +8,15 @@ import serial
 
 r"""
 Usage:
+    # 1. Fast delta-sync (uploads only modified files):
     python utils/flash_esp32.py valve_controller COM21
-    python utils/flash_esp32.py hub COM24
+    python utils/flash_esp32.py hub COM20
+
+    # 2. Complete Chip Erase + MicroPython Flash + Project Upload:
+    python utils/flash_esp32.py valve_controller COM4 --erase-flash
+
+    # 3. Clean Filesystem & Upload:
+    python utils/flash_esp32.py valve_controller COM21 --clean
 """
 
 def send_command(ser, cmd, timeout=5):
@@ -193,15 +200,54 @@ def upload_file_stream(ser, local_path, remote_path):
         
     send_command(ser, "f.close()\n")
 
+def run_erase_flash_and_firmware(port, chip="esp32s3", firmware_path=None, project_root="."):
+    import subprocess
+    if firmware_path is None:
+        firmware_dir = os.path.join(project_root, "firmware")
+        pattern = "*S3*.bin" if "s3" in chip.lower() else "ESP32_GENERIC-*.bin"
+        matches = sorted(glob.glob(os.path.join(firmware_dir, pattern)), reverse=True)
+        if not matches:
+            matches = sorted(glob.glob(os.path.join(firmware_dir, "*.bin")), reverse=True)
+        if not matches:
+            raise RuntimeError(f"No firmware .bin files found in {firmware_dir}")
+        firmware_path = matches[0]
+
+    print(f"\n=======================================================")
+    print(f" 1. Erasing entire flash on {port} ({chip})...")
+    print(f"=======================================================")
+    cmd_erase = [sys.executable, "-m", "esptool", "--port", port, "--chip", chip, "erase_flash"]
+    print("Executing:", " ".join(cmd_erase))
+    res = subprocess.run(cmd_erase)
+    if res.returncode != 0:
+        print(f"\n[ERROR] esptool erase_flash failed with code {res.returncode}")
+        sys.exit(1)
+
+    print(f"\n=======================================================")
+    print(f" 2. Writing MicroPython Firmware ({os.path.basename(firmware_path)})...")
+    print(f"=======================================================")
+    cmd_write = [sys.executable, "-m", "esptool", "--port", port, "--chip", chip, "--baud", "460800", "write_flash", "-z", "0x0", firmware_path]
+    print("Executing:", " ".join(cmd_write))
+    res = subprocess.run(cmd_write)
+    if res.returncode != 0:
+        print(f"\n[ERROR] esptool write_flash failed with code {res.returncode}")
+        sys.exit(1)
+
+    print("\nFirmware flashed successfully! Waiting for board initialization...")
+    time.sleep(2.5)
+
 def main():
     import argparse
 
     utils_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(utils_dir)
     
-    parser = argparse.ArgumentParser(description="Reliable persistent delta-sync for ESP32 devices.")
+    parser = argparse.ArgumentParser(description="Reliable persistent delta-sync & flash tool for ESP32 devices.")
     parser.add_argument("type", help="The project component to deploy (e.g., 'hub', 'valve_controller').")
     parser.add_argument("port", help="The COM port of the ESP32 device (e.g., 'COM21').")
+    parser.add_argument("--erase-flash", action="store_true", help="Erase entire flash and flash MicroPython firmware before syncing files.")
+    parser.add_argument("--chip", default="esp32s3", help="ESP32 chip type (e.g., 'esp32s3', 'esp32'). Default is 'esp32s3'.")
+    parser.add_argument("--firmware", default=None, help="Path to MicroPython firmware .bin file. Defaults to latest in ./firmware/.")
+    parser.add_argument("--clean", "--erase-fs", action="store_true", dest="clean_fs", help="Wipe all files on device filesystem before sync.")
     args = parser.parse_args()
 
     target_dir = os.path.join(project_root, args.type)
@@ -209,7 +255,12 @@ def main():
         print(f"Error: Target directory {target_dir} does not exist.")
         sys.exit(1)
 
-    print(f"Connecting to {args.port} at 115200...")
+    if args.erase_flash:
+        run_erase_flash_and_firmware(args.port, chip=args.chip, firmware_path=args.firmware, project_root=project_root)
+
+    print(f"\n=======================================================")
+    print(f" Connecting to {args.port} for Project File Sync ({args.type})...")
+    print(f"=======================================================")
     ser = serial.Serial(args.port, 115200, timeout=2)
     
     try:
@@ -243,19 +294,21 @@ def main():
             expected_files[rel] = f
             
         # --- 3. Clean up unwanted files ---
-        preserve_list = {'events.jsonl', 'faults.jsonl', 'config.json'}
+        preserve_list = set() if args.clean_fs else {'events.jsonl', 'faults.jsonl', 'config.json'}
         unwanted_files = []
         for dev_file in device_files.keys():
             if dev_file.endswith('.bak'):
                 continue
-            if dev_file not in expected_files and dev_file not in preserve_list:
+            if args.clean_fs or (dev_file not in expected_files and dev_file not in preserve_list):
                 unwanted_files.append(dev_file)
                 
         if unwanted_files:
-            print(f"Cleanup: Deleting {len(unwanted_files)} obsolete files from device...")
+            print(f"Cleanup: Deleting {len(unwanted_files)} {'all' if args.clean_fs else 'obsolete'} files from device...")
             for f in unwanted_files:
                 print(f" - Removing {f}...")
                 send_command(ser, f"import os\ntry: os.remove('{f}')\nexcept: pass\n")
+            if args.clean_fs:
+                device_files = {}
         else:
             print("Filesystem clean (no obsolete files).")
             

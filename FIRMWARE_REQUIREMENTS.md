@@ -39,12 +39,12 @@ To flash/upgrade an ESP32 node to MicroPython `v1.27.0`:
 
 2. **Erase Flash**:
    ```bash
-   python -m esptool --port COM12 --chip esp32s3 erase-flash
+   python -m esptool --port COM12 --chip esp32s3 erase_flash
    ```
 
 3. **Flash MicroPython v1.27.0 Binary**:
    ```bash
-   python -m esptool --port COM12 --chip esp32s3 write-flash 0 "..\firmware\ESP32_GENERIC_S3-20251209-v1.27.0.bin"
+   python -m esptool --port COM12 --chip esp32s3 write_flash -z 0x0 "..\firmware\ESP32_GENERIC_S3-20251209-v1.27.0.bin"
    ```
 
 4. **Upload Firmware Code**:
